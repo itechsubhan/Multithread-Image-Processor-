@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Multithread Image Processor </title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 2rem auto; }
+    .row { margin: .8rem 0; }
+    img { max-width: 100%; height: auto; border: 1px solid #ddd; padding: 4px; background: #fafafa; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    fieldset { border: 1px solid #ddd; padding: 1rem; }
+    button { padding: .5rem 1rem; }
+    .muted { color: #666; }
+    .stat { display: inline-block; min-width: 200px; }
+  </style>
+</head>
+<body>
+  <h1>Multithread Image Processor (Web)</h1>
+
+  <fieldset>
+    <legend>Inputs</legend>
+    <div class="row">
+      <label>Image: <input id="file" type="file" accept="image/*"></label>
+      <span class="muted">PNG/JPG/HEIC supported.</span>
+    </div>
+    <div class="row">
+      <label><input id="do_gray" type="checkbox"> Grayscale</label>
+      <label style="margin-left:1rem;"><input id="do_blur" type="checkbox" checked> Gaussian Blur</label>
+      <label style="margin-left:1rem;"><input id="sync" type="checkbox" checked> Synchronized threads</label>
+    </div>
+    <div class="row">
+      <label>Kernel size (odd): <input id="ksize" type="number" value="9" min="1" step="2"></label>
+      <label style="margin-left:1rem;">Threads: <input id="threads" type="number" value="4" min="1" step="1"></label>
+    </div>
+    <div class="row">
+      <button id="run">Run • Measure Times</button>
+      <span id="status" class="muted" style="margin-left:1rem;"></span>
+    </div>
+  </fieldset>
+
+  <div class="row">
+    <span class="stat" id="t_single">Single-thread: —</span>
+    <span class="stat" id="t_multi">Multi-thread: —</span>
+    <span class="stat" id="speedup">Speedup: —</span>
+  </div>
+
+  <div class="row grid">
+    <div>
+      <h3>Original</h3>
+      <img id="orig" alt="original preview">
+    </div>
+    <div>
+      <h3>Processed</h3>
+      <img id="out" alt="processed result">
+      <div class="row">
+        <a id="download" href="#" download="processed.png" style="display:none">⬇️ Download processed image</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const fileEl = document.getElementById('file');
+    const orig = document.getElementById('orig');
+    const out = document.getElementById('out');
+    const statusEl = document.getElementById('status');
+    const t_single = document.getElementById('t_single');
+    const t_multi  = document.getElementById('t_multi');
+    const speedup  = document.getElementById('speedup');
+    const dl = document.getElementById('download');
+
+    fileEl.onchange = () => {
+      const f = fileEl.files[0];
+      if (!f) { orig.src = ""; return; }
+      const reader = new FileReader();
+      reader.onload = e => { orig.src = e.target.result; };
+      reader.readAsDataURL(f);
+    };
+
+    async function postForm(url, fd) {
+      const r = await fetch(url, { method: "POST", body: fd });
+      if (!r.ok) {
+        const text = await r.text().catch(()=> "");
+        throw new Error(`HTTP ${r.status} ${r.statusText} ${text}`);
+      }
+      return r.json();
+    }
+
+    document.getElementById('run').onclick = async () => {
+      const f = fileEl.files[0];
+      if (!f) { alert("Pick an image first."); return; }
+
+      statusEl.textContent = "Processing...";
+      out.src = ""; dl.style.display = "none";
+      t_single.textContent = "Single-thread: —";
+      t_multi.textContent  = "Multi-thread: —";
+      speedup.textContent  = "Speedup: —";
+
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("do_gray", document.getElementById('do_gray').checked ? 1 : 0);
+      fd.append("do_blur", document.getElementById('do_blur').checked ? 1 : 0);
+      fd.append("ksize", document.getElementById('ksize').value);
+      fd.append("num_threads", document.getElementById('threads').value);
+      fd.append("sync", document.getElementById('sync').checked ? 1 : 0);
+
+      try {
+        const data = await postForm("/api/process", fd);
+        out.src = data.image;
+        t_single.textContent = `Single-thread: ${data.elapsed_single_ms} ms`;
+        t_multi.textContent  = `Multi-thread: ${data.elapsed_multi_ms} ms`;
+        const sp = (data.speedup === Infinity || data.speedup > 1e6) ? "∞" : data.speedup.toFixed(2) + "×";
+        speedup.textContent  = `Speedup: ${sp}`;
+        dl.href = data.image;
+        dl.style.display = "inline-block";
+        statusEl.textContent = "Done";
+      } catch (err) {
+        statusEl.textContent = "Error";
+        alert("Processing failed.\n" + err.message);
+      }
+    };
+  </script>
+</body>
+</html>
