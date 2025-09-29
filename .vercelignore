@@ -1,0 +1,12 @@
+# virtual envs, caches, notebooks, raw data, etc.
+venv/
+.env
+__pycache__/
+*.ipynb
+models/
+data/
+tmp/
+tests/
+docs/
+dist/
+build/
